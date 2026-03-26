@@ -1,0 +1,7 @@
+flask
+opencv-contrib-python
+numpy
+Pillow
+requests
+librosa
+scipy
