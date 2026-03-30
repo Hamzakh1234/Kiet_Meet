@@ -226,7 +226,7 @@ const StudentDashboard = () => {
                 {/* Welcome */}
                 <Animated.View entering={FadeInDown.duration(500).delay(100)}>
                     <Text style={styles.welcomeTitle}>
-                        Welcome back, <Text style={styles.welcomeName}>{user?.firstName || 'Student'} {user?.lastName || ''}</Text>
+                        Welcome back, <Text style={styles.welcomeName}>{user?.fullName || 'Student'}</Text>
                     </Text>
                     <Text style={styles.welcomeSub}>Ready to join your next class?</Text>
                 </Animated.View>

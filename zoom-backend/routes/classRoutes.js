@@ -122,7 +122,7 @@ router.get('/joined-classes/:studentId', async (req, res) => {
 // ── Get Single Class ──────────────────
 router.get('/:classId', async (req, res) => {
     try {
-        const cls = await Class.findById(req.params.classId).populate('students', 'firstName lastName');
+        const cls = await Class.findById(req.params.classId).populate('students', 'fullName');
         res.status(200).json({ class: cls });
     } catch (error) {
         res.status(500).json({ message: 'Server error' });
@@ -252,7 +252,7 @@ router.post('/dismiss-announcement', async (req, res) => {
 // -- Get Class Participants ------------
 router.get('/participants/:classId', async (req, res) => {
     try {
-        const cls = await Class.findById(req.params.classId).populate('students', 'firstName lastName email photo');
+        const cls = await Class.findById(req.params.classId).populate('students', 'fullName email photo');
         if (!cls) return res.status(404).json({ message: 'Class not found' });
         res.status(200).json({ participants: cls.students || [] });
     } catch (error) {

@@ -14,10 +14,8 @@ const useStore = create((set) => ({
 
     // Signup Form Persistence (Student)
     studentSignupData: {
-        firstName: '',
-        lastName: '',
+        fullName: '',
         email: '',
-        university: '',
         password: '',
         face_done: false,
         finger_done: false,
@@ -27,7 +25,7 @@ const useStore = create((set) => ({
         studentSignupData: { ...state.studentSignupData, ...data }
     })),
     clearStudentSignup: () => set({ 
-        studentSignupData: { firstName: '', lastName: '', email: '', university: '', password: '', face_done: false, finger_done: false, voice_done: false } 
+        studentSignupData: { fullName: '', email: '', password: '', face_done: false, finger_done: false, voice_done: false } 
     }),
 
     // Signup Form Persistence (Teacher)

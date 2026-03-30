@@ -69,11 +69,9 @@ const StudentSignup = () => {
     } = useStore();
 
     // ── Local State (Initial load from store) ──
-    const [firstName,  setFirstName]  = useState(studentSignupData.firstName);
-    const [lastName,   setLastName]   = useState(studentSignupData.lastName);
-    const [email,      setEmail]      = useState(studentSignupData.email);
-    const [university, setUniversity] = useState(studentSignupData.university);
-    const [password,   setPassword]   = useState(studentSignupData.password);
+    const [fullName,   setFullName]   = useState(studentSignupData.fullName || '');
+    const [email,      setEmail]      = useState(studentSignupData.email || '');
+    const [password,   setPassword]   = useState(studentSignupData.password || '');
     
     const [errors,     setErrors]     = useState({});
     const [loading,    setLoading]    = useState(false);
@@ -86,21 +84,19 @@ const StudentSignup = () => {
     // ── Sync with Store ──
     useEffect(() => {
         // Sync form data
-        setStudentSignupData({ firstName, lastName, email, university, password });
+        setStudentSignupData({ fullName, email, password });
         
         // Sync biometric params from navigation (Face/Voice)
         if (params.face_done === 'true') setStudentSignupData({ face_done: true });
         if (params.voice_done === 'true') setStudentSignupData({ voice_done: true });
         if (params.finger_done === 'true') setStudentSignupData({ finger_done: true });
-    }, [firstName, lastName, email, university, password, params.face_done, params.voice_done, params.finger_done]);
+    }, [fullName, email, password, params.face_done, params.voice_done, params.finger_done]);
 
     const validate = () => {
         const e = {};
-        if (!firstName.trim()) e.firstName = 'First name is required';
-        if (!lastName.trim()) e.lastName = 'Last name is required';
+        if (!fullName.trim()) e.fullName = 'Full name is required';
         if (!email.trim()) e.email = 'Email is required';
         else if (!email.includes('@')) e.email = 'Email must contain @';
-        if (!university.trim()) e.university = 'University name is required';
         if (!password) e.password = 'Password is required';
         else if (password.length < 6) e.password = 'Password must be at least 6 characters';
         setErrors(e);
@@ -146,10 +142,8 @@ const StudentSignup = () => {
         setLoading(true);
         try {
             const signupPayload = {
-                firstName:  firstName.trim(),
-                lastName:   lastName.trim(),
+                fullName:   fullName.trim(),
                 email:      email.trim().toLowerCase(),
-                university: university.trim(),
                 password,
                 faceRegistered: faceDone,
                 voiceRegistered: voiceDone,
@@ -211,25 +205,13 @@ const StudentSignup = () => {
                     {/* ── Personal Info ── */}
                     <Animated.View entering={FadeInDown.duration(500).delay(150)} style={styles.section}>
 
-                        {/* First + Last Name */}
-                        <View style={styles.row}>
-                            <View style={styles.halfField}>
-                                <Label text="First Name" />
-                                <InputField
-                                    icon="👤" placeholder="John"
-                                    value={firstName} onChangeText={setFirstName}
-                                    error={errors.firstName}
-                                />
-                            </View>
-                            <View style={styles.halfField}>
-                                <Label text="Last Name" />
-                                <InputField
-                                    icon="👤" placeholder="Doe"
-                                    value={lastName} onChangeText={setLastName}
-                                    error={errors.lastName}
-                                />
-                            </View>
-                        </View>
+                        {/* Full Name */}
+                        <Label text="Your Name" />
+                        <InputField
+                            icon="👤" placeholder="Enter your name"
+                            value={fullName} onChangeText={setFullName}
+                            error={errors.fullName}
+                        />
 
                         {/* Email */}
                         <Label text="Email" />
@@ -238,14 +220,6 @@ const StudentSignup = () => {
                             value={email} onChangeText={setEmail}
                             keyboardType="email-address"
                             error={errors.email}
-                        />
-
-                        {/* University */}
-                        <Label text="University Name" />
-                        <InputField
-                            icon="🏛️" placeholder="Fast NUCES"
-                            value={university} onChangeText={setUniversity}
-                            error={errors.university}
                         />
 
                         {/* Password */}
@@ -291,10 +265,17 @@ const StudentSignup = () => {
                                     <Pressable 
                                         style={styles.bioItem}
                                         onPress={() => {
+                                            if (!email.trim()) {
+                                                Alert.alert('Email Required', 'Please enter your email first to link your biometrics.');
+                                                return;
+                                            }
                                             if (item.label === 'Finger') {
                                                 handleFingerprint();
                                             } else {
-                                                router.push({ pathname: item.route, params: item.params });
+                                                router.push({ 
+                                                    pathname: item.route, 
+                                                    params: { ...item.params, user_id: email.trim().toLowerCase() } 
+                                                });
                                             }
                                         }}
                                     >

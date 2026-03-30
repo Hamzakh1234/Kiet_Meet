@@ -1,8 +1,10 @@
 // app/students/meeting.jsx
 import React, { useState, useEffect } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
     View, Text, Pressable, StyleSheet,
     StatusBar, Modal, ScrollView, ActivityIndicator,
+    Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import axios from 'axios';
@@ -74,7 +76,7 @@ function MeetingInner({ className, classId, onEnd, onBack }) {
     const participants         = useParticipants();
     const room                 = useRoomContext();
 
-    const { isMicrophoneEnabled, isCameraEnabled } = localParticipant;
+    const { isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled: isSharing } = localParticipant;
     const [handUp,           setHandUp]            = useState(false);
     const [showParticipants, setShowParticipants]  = useState(false);
 
@@ -90,12 +92,23 @@ function MeetingInner({ className, classId, onEnd, onBack }) {
         (p) => p.identity !== localParticipant?.identity
     );
 
-    // Pulsing dot
+    // Pulsing dot for header
     const pulseOpacity = useSharedValue(1);
     useEffect(() => {
         pulseOpacity.value = withRepeat(withTiming(0.2, { duration: 800 }), -1, true);
     }, []);
     const pulseStyle = useAnimatedStyle(() => ({ opacity: pulseOpacity.value }));
+
+    // Sharing pulse for button
+    const sharingPulse = useSharedValue(1);
+    useEffect(() => {
+        if (isSharing) {
+            sharingPulse.value = withRepeat(withTiming(0.4, { duration: 800 }), -1, true);
+        } else {
+            sharingPulse.value = 1;
+        }
+    }, [isSharing]);
+    const buttonPulseStyle = useAnimatedStyle(() => ({ opacity: sharingPulse.value }));
 
     useEffect(() => {
         if (room && room.state === 'connected') {
@@ -129,8 +142,25 @@ function MeetingInner({ className, classId, onEnd, onBack }) {
     };
 
     const toggleScreenShare = async () => {
-        const isSharing = localParticipant.isScreenShareEnabled;
-        await localParticipant.setScreenShareEnabled(!isSharing);
+        try {
+            const currentlySharing = localParticipant.isScreenShareEnabled;
+
+            // Exclusive Sharing Logic: Check if anyone else is already sharing
+            const otherSharer = participants.find(p => p.isScreenShareEnabled && p.identity !== localParticipant.identity);
+            
+            if (!currentlySharing && otherSharer) {
+                Alert.alert(
+                    "Cannot Share Screen",
+                    `${otherSharer.identity} is already sharing their screen. Only one person can share at a time.`
+                );
+                return;
+            }
+
+            await localParticipant.setScreenShareEnabled(!currentlySharing);
+        } catch (e) {
+            console.error('Sharing error:', e);
+            Alert.alert("Permission Error", "Could not start screen sharing. Please check your device permissions.");
+        }
     };
 
     // Find teacher (first remote or any named "Teacher")
@@ -146,6 +176,21 @@ function MeetingInner({ className, classId, onEnd, onBack }) {
     return (
         <View style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor={DARK} />
+
+            {/* ── STOP SHARING BANNER (Step 2) ── */}
+            {isSharing && (
+                <SafeAreaView edges={['top']} style={{ backgroundColor: PRIMARY }}>
+                    <Animated.View entering={FadeInUp.duration(300)} style={styles.stopSharingBar}>
+                        <View style={styles.stopSharingContent}>
+                            <Text style={styles.stopSharingIcon}>🖥️</Text>
+                            <Text style={styles.stopSharingText}>You are sharing your screen</Text>
+                        </View>
+                        <Pressable style={styles.stopSharingBtn} onPress={toggleScreenShare}>
+                            <Text style={styles.stopSharingBtnText}>Stop Presenting</Text>
+                        </Pressable>
+                    </Animated.View>
+                </SafeAreaView>
+            )}
 
             {/* ── PARTICIPANTS MODAL ── */}
             <Modal visible={showParticipants} transparent animationType="slide" onRequestClose={() => setShowParticipants(false)}>
@@ -221,23 +266,18 @@ function MeetingInner({ className, classId, onEnd, onBack }) {
                         </View>
                     </View>
                     <View style={styles.headerRight}>
-                        <Pressable style={styles.headerBtn} onPress={() => setShowParticipants(true)}>
-                            <Text style={styles.headerBtnIcon}>👥</Text>
-                        </Pressable>
-                        <Pressable style={styles.headerBtn} onPress={toggleScreenShare}>
-                            <Text style={styles.headerBtnIcon}>🖥️</Text>
-                        </Pressable>
+                        {/* UI Cleanup: Redundant icons removed */}
                     </View>
                 </Animated.View>
 
-                {/* ── LOCAL PiP (student's own feed) ── */}
+                {/* ── LOCAL PiP ── */}
                 <Animated.View entering={FadeIn.duration(600).delay(200)} style={styles.pip}>
                     {localVideoTrack && isCameraEnabled ? (
                         <VideoTrack trackRef={localVideoTrack} style={StyleSheet.absoluteFill} mirror />
                     ) : (
                         <View style={styles.pipVideo}>
                             <Text style={styles.pipAvatarText}>
-                                {localParticipant?.identity?.charAt(0)?.toUpperCase() || '?'}
+                                {localParticipant?.identity?.charAt(0)?.toUpperCase() || 'S'}
                             </Text>
                         </View>
                     )}
@@ -246,47 +286,35 @@ function MeetingInner({ className, classId, onEnd, onBack }) {
                     </View>
                 </Animated.View>
 
-                {/* ── TEACHER NAME TAG ── */}
-                {teacher && (
-                    <Animated.View entering={FadeInUp.duration(500).delay(300)} style={styles.nameTag}>
-                        <View style={[styles.nameDot, { backgroundColor: PRIMARY }]} />
-                        <Text style={styles.nameTagText}>{teacher.identity}</Text>
-                    </Animated.View>
+                {/* ── REMOTE PiPs Scroll ── */}
+                {remoteParticipants.length > 1 && (
+                    <ScrollView horizontal style={styles.remoteList} contentContainerStyle={{ gap: 10 }} showsHorizontalScrollIndicator={false}>
+                        {remoteParticipants.slice(1).map(p => (
+                            <RemoteTile key={p.identity} participant={p} />
+                        ))}
+                    </ScrollView>
                 )}
-
-                {/* ── REACTIONS BAR ── */}
-                <Animated.View entering={FadeInUp.duration(500).delay(500)} style={styles.reactionsBar}>
-                    {['👏', '🔥', '❤️', '💡', '💯'].map((emoji) => (
-                        <Pressable key={emoji} style={styles.reactionBtn}>
-                            <Text style={styles.reactionEmoji}>{emoji}</Text>
-                        </Pressable>
-                    ))}
-                </Animated.View>
             </View>
 
-            {/* ── BOTTOM CONTROLS ── */}
-            <Animated.View entering={FadeInUp.duration(600).delay(200)} style={styles.controls}>
+            {/* ── CONTROLS ── */}
+            <View style={styles.controls}>
                 <View style={styles.ctrlRow}>
-
                     <Pressable style={styles.ctrlItem} onPress={toggleMic}>
                         <View style={[styles.ctrlCircle, isMicrophoneEnabled && styles.ctrlCircleActive]}>
-                            <Text style={styles.ctrlIcon}>{!isMicrophoneEnabled ? '🔇' : '🎙️'}</Text>
+                            <Text style={styles.ctrlIcon}>{isMicrophoneEnabled ? '🎙️' : '🔇'}</Text>
                         </View>
                         <Text style={styles.ctrlLabel}>{isMicrophoneEnabled ? 'Mute' : 'Unmute'}</Text>
                     </Pressable>
 
                     <Pressable style={styles.ctrlItem} onPress={toggleCamera}>
                         <View style={[styles.ctrlCircle, isCameraEnabled && styles.ctrlCircleActive]}>
-                            <Text style={styles.ctrlIcon}>{!isCameraEnabled ? '📷' : '📹'}</Text>
+                            <Text style={styles.ctrlIcon}>{isCameraEnabled ? '📹' : '📷'}</Text>
                         </View>
                         <Text style={styles.ctrlLabel}>Video</Text>
                     </Pressable>
 
-                    <Pressable style={styles.ctrlItem} onPress={() => setHandUp(!handUp)}>
-                        <View style={[styles.ctrlCircle, handUp && styles.ctrlCircleActive]}>
-                            <Text style={styles.ctrlIcon}>✋</Text>
-                        </View>
-                        <Text style={styles.ctrlLabel}>Raise</Text>
+                    <Pressable style={styles.endBtn} onPress={onEnd}>
+                        <Text style={{ fontSize: 28, transform: [{ rotate: '135deg' }] }}>📞</Text>
                     </Pressable>
 
                     <Pressable style={styles.ctrlItem} onPress={() => setShowParticipants(true)}>
@@ -297,149 +325,89 @@ function MeetingInner({ className, classId, onEnd, onBack }) {
                     </Pressable>
 
                     <Pressable style={styles.ctrlItem} onPress={toggleScreenShare}>
-                        <View style={styles.ctrlCircle}>
+                        <View style={[styles.ctrlCircle, isSharing && styles.ctrlCircleActive]}>
                             <Text style={styles.ctrlIcon}>🖥️</Text>
+                            {isSharing && (
+                                <Animated.View style={[styles.pulseDotIcon, buttonPulseStyle]} />
+                            )}
                         </View>
-                        <Text style={styles.ctrlLabel}>Share</Text>
+                        <Text style={[styles.ctrlLabel, isSharing && { color: PRIMARY, fontWeight: '800' }]}>
+                            {isSharing ? 'Sharing' : 'Share'}
+                        </Text>
                     </Pressable>
-
                 </View>
 
                 <View style={styles.actionRow}>
-                    <Pressable style={styles.notesBtn}>
-                        <Text style={styles.notesBtnIcon}>📝</Text>
-                        <Text style={styles.notesBtnText}>Shared Notes</Text>
+                    <Pressable style={[styles.actionBtn, handUp && styles.actionBtnActive]} onPress={() => setHandUp(!handUp)}>
+                        <Text style={styles.actionBtnIcon}>✋</Text>
+                        <Text style={[styles.actionBtnText, handUp && styles.actionBtnTextActive]}>Raise Hand</Text>
                     </Pressable>
-                    <Pressable style={styles.endCallBtn} onPress={onEnd}>
-                        <Text style={styles.endCallIcon}>📵</Text>
+                    <Pressable style={styles.actionBtn}>
+                        <Text style={styles.actionBtnIcon}>💬</Text>
+                        <Text style={styles.actionBtnText}>Chat</Text>
                     </Pressable>
                 </View>
-
-                <View style={styles.homeIndicator} />
-            </Animated.View>
-
+            </View>
         </View>
     );
 }
 
-// ── Main Wrapper ───────────────────────────────────────────
-export default function MeetingScreen() {
+// ── Main Export ────────────────────────────────────────────
+export default function Meeting() {
     const router = useRouter();
-    const { classId, className, classCode, teacherName } = useLocalSearchParams();
+    const { classId, className, classCode } = useLocalSearchParams();
     const user = useStore((state) => state.user);
 
-    const [token,   setToken]   = useState(null);
+    const [token, setToken] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [error,   setError]   = useState(null);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
-        if (classCode) fetchToken();
-    }, [classCode]);
-
-    useEffect(() => {
-        if (classId && user) {
-            const checkEnrollment = async () => {
-                try {
-                    const response = await axios.get(`${BASE_URL}/classes/${classId}`);
-                    const students = response.data.class.students;
-                    const sid = user?._id || user?.id;
-                    if (sid && students) {
-                        const isStillMember = students.some(s => (s._id || s.id || s) === sid);
-                        if (!isStillMember) {
-                            router.replace('/students/student_dashboard');
-                        }
-                    }
-                } catch (e) {
-                    console.log('Enrollment check error:', e);
-                }
-            };
-            const interval = setInterval(checkEnrollment, 5000);
-            return () => clearInterval(interval);
-        }
-    }, [classId, user]);
+        if (classId) fetchToken();
+    }, [classId]);
 
     const fetchToken = async () => {
         try {
             const response = await axios.post(TOKEN_API, {
-                roomName:        classCode,
-                participantName: user?.firstName
-                    ? `${user.firstName} ${user.lastName || ''}`.trim()
-                    : 'Student',
+                roomName: classCode,
+                participantName: user?.fullName || `Student_${Math.floor(Math.random()*1000)}`,
             });
             setToken(response.data.token);
         } catch (e) {
-            setError('Failed to connect. Please try again.');
-            console.error('Token fetch error:', e);
-            setError(`Token failed: ${e.response?.data?.message || e.message}`);
+            console.error('Token error:', e);
+            setError('Connection failed. Please retry.');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleBack = () => {
-        router.replace({
-            pathname: '/students/students_meeting_room',
-            params: { classId, className, classCode, teacherName }
-        });
-    };
+    const handleBack = () => router.back();
+    const handleEnd = () => router.replace('/students/students_classes');
 
-    const handleEnd = () => {
-        router.replace({
-            pathname: '/students/students_meeting_room',
-            params: { classId, className, classCode, teacherName }
-        });
-    };
+    if (loading) return (
+        <View style={styles.centered}>
+            <ActivityIndicator color={PRIMARY} size="large" />
+            <Text style={styles.loadingTxt}>Entering Classroom...</Text>
+        </View>
+    );
 
-    if (loading) {
-        return (
-            <View style={styles.centered}>
-                <ActivityIndicator color={PRIMARY} size="large" />
-                <Text style={styles.loadingTxt}>Joining meeting...</Text>
-            </View>
-        );
-    }
-
-    if (error) {
-        return (
-            <View style={styles.centered}>
-                <Text style={styles.errorTxt}>{error}</Text>
-                <Pressable
-                    style={styles.retryBtn}
-                    onPress={() => { setLoading(true); setError(null); fetchToken(); }}
-                >
-                    <Text style={styles.retryTxt}>Retry</Text>
-                </Pressable>
-            </View>
-        );
-    }
+    if (error) return (
+        <View style={styles.centered}>
+            <Text style={styles.errorTxt}>{error}</Text>
+            <Pressable style={styles.retryBtn} onPress={() => { setLoading(true); setError(null); fetchToken(); }}>
+                <Text style={styles.retryTxt}>Retry</Text>
+            </Pressable>
+        </View>
+    );
 
     return (
         <LiveKitRoom
             serverUrl={LIVEKIT_URL}
             token={token}
             connect={true}
-            audio={false} // Delay till connected
-            video={false} // Delay till connected
-            connectOptions={{
-                autoSubscribe: true,
-                connectTimeout: 30000,
-                publishDefaults: {
-                    videoEncoding: { maxBitrate: 1500000 },
-                    dtx: true,
-                },
-            }}
-            onDisconnected={(reason) => {
-                console.log('Student disconnected:', reason);
-                if (reason === 'user_initiated' || reason === 'room_closed') {
-                    handleEnd();
-                }
-            }}
-            onError={(e) => {
-                console.error('LiveKitRoom Error:', e);
-                if (e.message?.includes('token')) {
-                    setError(`Connection Error: ${e.message}`);
-                }
-            }}
+            audio={false}
+            video={false}
+            connectOptions={{ autoSubscribe: true }}
         >
             <MeetingInner
                 className={className}
@@ -454,143 +422,108 @@ export default function MeetingScreen() {
 // ── Styles ─────────────────────────────────────────────────
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: DARK },
-    centered: { flex: 1, backgroundColor: DARK, alignItems: 'center', justifyContent: 'center', gap: 16 },
-    loadingTxt: { color: MUTED, fontSize: 14, fontWeight: '600' },
-    errorTxt: { color: DANGER, fontSize: 14, fontWeight: '600', textAlign: 'center', paddingHorizontal: 32 },
-    retryBtn: { backgroundColor: PRIMARY, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
-    retryTxt: { color: WHITE, fontWeight: '800' },
+    centered : { flex: 1, backgroundColor: DARK, alignItems: 'center', justifyContent: 'center', gap: 16 },
+    loadingTxt: { color: WHITE, fontSize: 14, fontWeight: '600' },
+    errorTxt: { color: DANGER, fontSize: 14, textAlign: 'center', paddingHorizontal: 40 },
+    retryBtn: { backgroundColor: PRIMARY, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+    retryTxt: { color: WHITE, fontWeight: 'bold' },
 
-    videoBg: { flex: 1, backgroundColor: '#1a2535', position: 'relative' },
-    videoOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.2)', zIndex: 1 },
+    videoBg: { flex: 1, backgroundColor: '#1a1a1a' },
+    videoOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.2)' },
 
-    noTeacherBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-    noTeacherAvatar: {
-        width: 90, height: 90, borderRadius: 45,
-        backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center', marginBottom: 14,
-    },
-    noTeacherInitial: { fontSize: 36, fontWeight: '800', color: WHITE },
-    noTeacherTxt: { color: MUTED, fontSize: 14, fontWeight: '600' },
+    noTeacherBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20 },
+    noTeacherAvatar: { width: 100, height: 100, borderRadius: 50, backgroundColor: PRIMARY, alignItems: 'center', justifyContent: 'center' },
+    noTeacherInitial: { fontSize: 40, color: WHITE, fontWeight: 'bold' },
+    noTeacherTxt: { color: WHITE, fontSize: 16, fontWeight: '600' },
 
     header: {
-        position: 'absolute', top: 0, left: 0, right: 0,
-        flexDirection: 'row', alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16, paddingTop: 52, paddingBottom: 12,
+        position: 'absolute', top: 50, left: 20, right: 20,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         zIndex: 10,
     },
-    headerBtn: {
-        width: 40, height: 40, borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.15)',
-        alignItems: 'center', justifyContent: 'center',
-    },
-    headerBtnIcon: { fontSize: 18 },
+    headerBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+    headerBtnIcon: { color: WHITE, fontSize: 20 },
     headerTitle: { alignItems: 'center' },
-    headerTitleText: { fontSize: 14, fontWeight: '800', color: WHITE },
-    liveRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
-    liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: DANGER },
-    liveText: { fontSize: 9, fontWeight: '800', color: '#CBD5E1', letterSpacing: 1.5 },
-    headerRight: { flexDirection: 'row', gap: 8 },
+    headerTitleText: { color: WHITE, fontSize: 16, fontWeight: '800' },
+    liveRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+    liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: DANGER },
+    liveText: { color: WHITE, fontSize: 11, fontWeight: '700' },
+    headerRight: { width: 88, flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
 
     pip: {
-        position: 'absolute', top: 110, right: 16,
-        width: 90, aspectRatio: 3 / 4,
-        borderRadius: 14, overflow: 'hidden',
-        borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)',
-        zIndex: 10,
+        position: 'absolute', bottom: 100, right: 20,
+        width: 100, height: 150, borderRadius: 12,
+        backgroundColor: '#333', overflow: 'hidden',
+        borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)',
+        zIndex: 20,
     },
+    pipVideo: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#444' },
+    pipAvatarText: { color: WHITE, fontSize: 24, fontWeight: 'bold' },
+    pipLabel: { position: 'absolute', bottom: 8, left: 8, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+    pipLabelText: { color: WHITE, fontSize: 10, fontWeight: '600' },
     pipSpeaking: { borderColor: PRIMARY },
-    pipVideo: {
-        flex: 1, backgroundColor: '#2d3748',
-        alignItems: 'center', justifyContent: 'center',
-    },
-    pipAvatarText: { fontSize: 30, fontWeight: '800', color: WHITE },
-    pipLabel: {
-        position: 'absolute', bottom: 6, left: 4, right: 4,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4, alignItems: 'center',
-    },
-    pipLabelText: { fontSize: 8, color: WHITE, fontWeight: '700' },
 
-    nameTag: {
-        position: 'absolute', bottom: 100, left: 16,
-        flexDirection: 'row', alignItems: 'center', gap: 7,
-        backgroundColor: 'rgba(34,22,16,0.82)',
-        paddingHorizontal: 12, paddingVertical: 7,
-        borderRadius: 10, borderWidth: 1, borderColor: `${PRIMARY}40`,
-        zIndex: 10,
-    },
-    nameDot: { width: 8, height: 8, borderRadius: 4 },
-    nameTagText: { fontSize: 12, fontWeight: '700', color: WHITE },
-
-    reactionsBar: {
-        position: 'absolute', bottom: 14, alignSelf: 'center',
-        flexDirection: 'row', alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.75)',
-        paddingHorizontal: 14, paddingVertical: 10,
-        borderRadius: 50, zIndex: 10, gap: 4,
-    },
-    reactionBtn: { padding: 4 },
-    reactionEmoji: { fontSize: 20 },
+    remoteList: { position: 'absolute', bottom: 100, left: 20, right: 130 },
 
     controls: {
         backgroundColor: WHITE,
-        paddingHorizontal: 24, paddingVertical: 20,
-        borderTopLeftRadius: 28, borderTopRightRadius: 28,
+        borderTopLeftRadius: 32, borderTopRightRadius: 32,
+        paddingTop: 24, paddingBottom: 40,
     },
-    ctrlRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 18 },
-    ctrlItem: { alignItems: 'center', gap: 5 },
-    ctrlCircle: {
-        width: 50, height: 50, borderRadius: 25,
-        backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center',
-    },
-    ctrlCircleActive: {
-        backgroundColor: PRIMARY,
-        shadowColor: PRIMARY, shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4, shadowRadius: 8, elevation: 5,
-    },
-    ctrlIcon: { fontSize: 20 },
-    ctrlLabel: { fontSize: 9, fontWeight: '800', color: MUTED, textTransform: 'uppercase', letterSpacing: 0.8 },
+    ctrlRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', marginBottom: 24 },
+    ctrlItem: { alignItems: 'center', gap: 8 },
+    ctrlCircle: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
+    ctrlCircleActive: { backgroundColor: PRIMARY },
+    ctrlIcon: { fontSize: 22 },
+    ctrlLabel: { fontSize: 11, fontWeight: '600', color: MUTED },
+    endBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: DANGER, alignItems: 'center', justifyContent: 'center', elevation: 4 },
 
-    actionRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-    notesBtn: {
-        flex: 1, flexDirection: 'row', alignItems: 'center',
-        justifyContent: 'center', gap: 8,
-        backgroundColor: '#F1F5F9', paddingVertical: 14, borderRadius: 14,
-        borderWidth: 1, borderColor: '#E2E8F0',
-    },
-    notesBtnIcon: { fontSize: 16 },
-    notesBtnText: { fontSize: 13, fontWeight: '700', color: '#374151' },
-    endCallBtn: {
-        width: 56, height: 52, backgroundColor: '#FEE2E2',
-        borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-        borderWidth: 1, borderColor: '#FECACA',
-    },
-    endCallIcon: { fontSize: 22 },
-    homeIndicator: {
-        width: 120, height: 4, borderRadius: 2,
-        backgroundColor: '#E2E8F0', alignSelf: 'center', marginTop: 4,
-    },
+    actionRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 24 },
+    actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#F8FAFC', paddingVertical: 14, borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0' },
+    actionBtnActive: { backgroundColor: PRIMARY, borderColor: PRIMARY },
+    actionBtnIcon: { fontSize: 18 },
+    actionBtnText: { fontSize: 14, fontWeight: '700', color: '#1E293B' },
+    actionBtnTextActive: { color: WHITE },
 
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-    modalContent: {
-        backgroundColor: WHITE, borderTopLeftRadius: 30, borderTopRightRadius: 30,
-        padding: 24, height: '70%',
+    modalContent: { backgroundColor: WHITE, borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, maxHeight: '80%' },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+    modalTitle: { fontSize: 20, fontWeight: '800', color: '#1E293B' },
+    closeBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
+    closeBtnText: { fontSize: 14, color: '#64748B' },
+    participantItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+    pAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
+    pAvatarInitial: { fontSize: 16, fontWeight: 'bold', color: PRIMARY },
+    pInfo: { flex: 1 },
+    pName: { fontSize: 16, fontWeight: '700', color: '#1E293B' },
+    pBadge: { alignSelf: 'flex-start', backgroundColor: '#E0F2FE', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, marginTop: 2 },
+    pBadgeText: { fontSize: 10, fontWeight: '800', color: '#0369A1' },
+
+    pulseDotIcon: {
+        position: 'absolute', top: 5, right: 5,
+        width: 10, height: 10, borderRadius: 5,
+        backgroundColor: WHITE, borderWidth: 2, borderColor: PRIMARY,
     },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    modalTitle: { fontSize: 20, fontWeight: '800', color: DARK },
-    closeBtn: { padding: 5 },
-    closeBtnText: { fontSize: 20, color: MUTED },
-    participantItem: {
-        flexDirection: 'row', alignItems: 'center', gap: 15,
-        paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
+
+    // Step 2: Stop Sharing Banner Styles
+    stopSharingBar: {
+        backgroundColor: PRIMARY,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
     },
-    pAvatar: {
-        width: 44, height: 44, borderRadius: 22,
-        backgroundColor: `${PRIMARY}20`, alignItems: 'center', justifyContent: 'center',
+    stopSharingContent: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    stopSharingIcon: { fontSize: 16 },
+    stopSharingText: { color: WHITE, fontSize: 13, fontWeight: '700' },
+    stopSharingBtn: {
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.4)',
     },
-    pAvatarInitial: { fontSize: 18, fontWeight: '800', color: PRIMARY },
-    pInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-    pName: { fontSize: 15, fontWeight: '700', color: DARK },
-    pBadge: { backgroundColor: `${PRIMARY}15`, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-    pBadgeText: { fontSize: 10, fontWeight: '800', color: PRIMARY },
+    stopSharingBtnText: { color: WHITE, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
 });

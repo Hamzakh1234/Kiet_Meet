@@ -177,10 +177,16 @@ const StudentLogin = () => {
                                 {/* Face Icon */}
                                 <Pressable 
                                     style={styles.bioItem}
-                                    onPress={() => router.push({
-                                        pathname: '/Authentication/',
-                                        params: { role: 'student', mode: 'verify', returnTo: '/students/' }
-                                    })}
+                                    onPress={() => {
+                                        if (!email.trim()) {
+                                            Alert.alert('Email Required', 'Please enter your email first to verify your biometrics.');
+                                            return;
+                                        }
+                                        router.push({
+                                            pathname: '/Authentication/',
+                                            params: { role: 'student', mode: 'verify', returnTo: '/students/', user_id: email.trim().toLowerCase() }
+                                        });
+                                    }}
                                 >
                                     <View style={[styles.bioCircle, faceVerified && styles.bioCircleDone]}>
                                         <Text style={{ fontSize: 24, opacity: faceVerified ? 1 : 0.5 }}>😊</Text>
@@ -208,10 +214,16 @@ const StudentLogin = () => {
                                 {/* Voice Icon */}
                                 <Pressable 
                                     style={styles.bioItem}
-                                    onPress={() => router.push({
-                                        pathname: '/Authentication/voice_recog',
-                                        params: { role: 'student', mode: 'verify', returnTo: '/students/' }
-                                    })}
+                                    onPress={() => {
+                                        if (!email.trim()) {
+                                            Alert.alert('Email Required', 'Please enter your email first to verify your biometrics.');
+                                            return;
+                                        }
+                                        router.push({
+                                            pathname: '/Authentication/voice_recog',
+                                            params: { role: 'student', mode: 'verify', returnTo: '/students/', user_id: email.trim().toLowerCase() }
+                                        });
+                                    }}
                                 >
                                     <View style={[styles.bioCircle, voiceVerified && styles.bioCircleDone]}>
                                         <Text style={{ fontSize: 24, opacity: voiceVerified ? 1 : 0.5 }}>🎙️</Text>

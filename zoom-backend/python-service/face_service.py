@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import cv2
 import numpy as np
 import base64
@@ -217,5 +217,8 @@ def verify_finger():
         return jsonify({'verified': False, 'message': str(e)}), 500
 
 if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5001, debug=True)
 
-    app.run(host='0.0.0.0', port=5001, debug=True)
+@app.route('/faces/<path:filename>')
+def serve_face(filename):
+    return send_from_directory(FACES_DIR, filename)

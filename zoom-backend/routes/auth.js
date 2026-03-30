@@ -9,7 +9,7 @@ router.post('/signup', async (req, res) => {
     console.log('📝 Student Signup Request:', req.body);
     try {
         let { 
-            firstName, lastName, email, phone, university, semester, password,
+            fullName, email, phone, university, semester, password,
             faceRegistered, voiceRegistered, fingerprintVerified 
         } = req.body;
 
@@ -25,8 +25,7 @@ router.post('/signup', async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const user = new Student({
-            firstName: firstName?.trim(),
-            lastName: lastName?.trim(),
+            fullName:  fullName?.trim(),
             email,
             phone,
             university: university?.trim(),
@@ -92,8 +91,7 @@ router.post('/login', async (req, res) => {
             token,
             user: {
                 _id: user._id,
-                firstName: user.firstName,
-                lastName: user.lastName,
+                fullName: user.fullName,
                 email: user.email,
                 phone: user.phone,
                 university: user.university,

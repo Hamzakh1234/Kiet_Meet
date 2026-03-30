@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, Pressable,
     StatusBar, ScrollView, Modal, ActivityIndicator,
+    Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -10,7 +11,10 @@ import axios from 'axios';
 import { BASE_URL, LIVEKIT_URL } from '../../config';
 
 import useStore from '../../store/useStore';
-import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Animated, { 
+    FadeIn, FadeInDown, FadeInUp,
+    useSharedValue, useAnimatedStyle, withRepeat, withTiming 
+} from 'react-native-reanimated';
 import {
     LiveKitRoom,
     VideoTrack,
@@ -34,9 +38,7 @@ const BORDER   = 'rgba(236,91,19,0.15)';
 const GLASS    = 'rgba(255,255,255,0.08)';
 const API_URL       = `${BASE_URL}/classes`;
 
-
 const TOKEN_API     = `${BASE_URL}/livekit/token`;
-
 
 // ── Participant Tile ───────────────────────────────────────
 const ParticipantTile = ({ participant }) => {
@@ -95,12 +97,26 @@ function MeetingInner({ className, classCode, classId, onEnd, onBack }) {
     const participants          = useParticipants();
     const room                  = useRoomContext();
 
-    const { isMicrophoneEnabled, isCameraEnabled } = localParticipant;
+    const { isMicrophoneEnabled, isCameraEnabled, isScreenShareEnabled: isSharing } = localParticipant;
 
     const [timer,            setTimer]            = useState(0);
     const [showParticipants, setShowParticipants] = useState(false);
     const [showActions,      setShowActions]      = useState(false);
     const [activeTab,        setActiveTab]        = useState('chat');
+
+    // Step 2: Pulsing for sharing
+    const sharingPulse = useSharedValue(1);
+    useEffect(() => {
+        if (isSharing) {
+            sharingPulse.value = withRepeat(withTiming(0.4, { duration: 800 }), -1, true);
+        } else {
+            sharingPulse.value = withTiming(1);
+        }
+    }, [isSharing]);
+
+    const pulseStyle = useAnimatedStyle(() => ({
+        opacity: sharingPulse.value,
+    }));
 
     // Local video track
     const localVideoTracks = useTracks(
@@ -158,8 +174,27 @@ function MeetingInner({ className, classCode, classId, onEnd, onBack }) {
     };
 
     const toggleScreenShare = async () => {
-        const isSharing = localParticipant.isScreenShareEnabled;
-        await localParticipant.setScreenShareEnabled(!isSharing);
+        try {
+            const isSharingState = localParticipant.isScreenShareEnabled;
+
+            // Exclusive Sharing Logic: Check if anyone else is already sharing
+            const otherSharer = participants.find(p => p.isScreenShareEnabled && p.identity !== localParticipant.identity);
+            if (!isSharingState && otherSharer) {
+                Alert.alert(
+                    "Cannot Share Screen",
+                    `${otherSharer.identity} is already sharing their screen. Only one person can share at a time.`
+                );
+                return;
+            }
+
+            await localParticipant.setScreenShareEnabled(!isSharingState);
+        } catch (error) {
+            console.error('Screen share error:', error);
+            Alert.alert(
+                'Screen Share Error',
+                'Could not start screen sharing. Please ensure you have granted the necessary permissions.'
+            );
+        }
     };
 
     const BOTTOM_TABS = [
@@ -227,6 +262,21 @@ function MeetingInner({ className, classCode, classId, onEnd, onBack }) {
 
             {/* ── HEADER ── */}
             <SafeAreaView>
+                {isSharing && (
+                    <Animated.View 
+                        entering={FadeInUp.duration(300)}
+                        style={styles.stopSharingBar}
+                    >
+                        <View style={styles.stopSharingContent}>
+                            <Text style={styles.stopSharingIcon}>🖥️</Text>
+                            <Text style={styles.stopSharingText}>You are sharing your screen</Text>
+                        </View>
+                        <Pressable style={styles.stopSharingBtn} onPress={toggleScreenShare}>
+                            <Text style={styles.stopSharingBtnText}>Stop Presenting</Text>
+                        </Pressable>
+                    </Animated.View>
+                )}
+
                 <Animated.View entering={FadeInDown.duration(400)} style={styles.header}>
                     <Pressable style={styles.backCircle} onPress={onBack}>
                         <Text style={{ fontSize: 18, color: WHITE }}>←</Text>
@@ -245,34 +295,47 @@ function MeetingInner({ className, classCode, classId, onEnd, onBack }) {
             {/* ── VIDEO AREA ── */}
             <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.videoScroll} showsVerticalScrollIndicator={false}>
 
-                {/* Local (Teacher) main feed */}
-                <Animated.View entering={FadeIn.duration(500)} style={styles.mainFeed}>
-                    {localVideoTrack && isCameraEnabled ? (
-                        <VideoTrack trackRef={localVideoTrack} style={StyleSheet.absoluteFill} mirror />
-                    ) : (
-                        <View style={styles.camOffBox}>
-                            <View style={styles.avatarLarge}>
-                                <Text style={styles.avatarLargeTxt}>
-                                    {localParticipant?.identity?.charAt(0)?.toUpperCase() || 'T'}
-                                </Text>
+                {/* Main feed area: Either Sharing Placeholder OR Camera feed */}
+                {isSharing ? (
+                    <Animated.View entering={FadeIn.duration(400)} style={[styles.mainFeed, styles.sharingActiveContainer]}>
+                        <View style={styles.sharingIconCircle}>
+                            <Text style={{ fontSize: 40 }}>🖥️</Text>
+                        </View>
+                        <Text style={styles.sharingMainTxt}>Screen Sharing Active</Text>
+                        <Text style={styles.sharingSubTxt}>The class can see your entire screen</Text>
+                        <Pressable style={styles.sharingStopBtnInline} onPress={toggleScreenShare}>
+                            <Text style={styles.sharingStopBtnInlineText}>Stop Sharing</Text>
+                        </Pressable>
+                    </Animated.View>
+                ) : (
+                    <Animated.View entering={FadeIn.duration(500)} style={styles.mainFeed}>
+                        {localVideoTrack && isCameraEnabled ? (
+                            <VideoTrack trackRef={localVideoTrack} style={StyleSheet.absoluteFill} mirror />
+                        ) : (
+                            <View style={styles.camOffBox}>
+                                <View style={styles.avatarLarge}>
+                                    <Text style={styles.avatarLargeTxt}>
+                                        {localParticipant?.identity?.charAt(0)?.toUpperCase() || 'T'}
+                                    </Text>
+                                </View>
+                                <Text style={styles.camOffTxt}>Camera is off</Text>
                             </View>
-                            <Text style={styles.camOffTxt}>Camera is off</Text>
+                        )}
+                        <View style={styles.namePill}>
+                            <Text style={{ fontSize: 10 }}>🎙️</Text>
+                            <Text style={styles.namePillTxt}>{localParticipant?.identity || 'Teacher'} (You)</Text>
                         </View>
-                    )}
-                    <View style={styles.namePill}>
-                        <Text style={{ fontSize: 10 }}>🎙️</Text>
-                        <Text style={styles.namePillTxt}>{localParticipant?.identity || 'Teacher'} (You)</Text>
-                    </View>
-                    <View style={styles.hostBadge}>
-                        <Text style={styles.hostBadgeTxt}>HOST</Text>
-                    </View>
-                    {isCameraEnabled && (
-                        <View style={styles.liveBadge}>
-                            <View style={styles.liveDot} />
-                            <Text style={styles.liveTxt}>LIVE</Text>
+                        <View style={styles.hostBadge}>
+                            <Text style={styles.hostBadgeTxt}>HOST</Text>
                         </View>
-                    )}
-                </Animated.View>
+                        {isCameraEnabled && (
+                            <View style={styles.liveBadge}>
+                                <View style={styles.liveDot} />
+                                <Text style={styles.liveTxt}>LIVE</Text>
+                            </View>
+                        )}
+                    </Animated.View>
+                )}
 
                 {/* Remote participants grid */}
                 {remoteParticipants.length > 0 && (
@@ -308,10 +371,15 @@ function MeetingInner({ className, classCode, classId, onEnd, onBack }) {
                     </Pressable>
 
                     <Pressable style={styles.ctrlWrap} onPress={toggleScreenShare}>
-                        <View style={styles.ctrlBtn}>
-                            <Text style={styles.ctrlIcon}>🖥️</Text>
+                        <View style={[styles.ctrlBtn, isSharing && styles.ctrlBtnActiveSharing]}>
+                            <Text style={[styles.ctrlIcon, isSharing && { color: WHITE }]}>🖥️</Text>
+                            {isSharing && (
+                                <Animated.View style={[styles.pulseDot, pulseStyle]} />
+                            )}
                         </View>
-                        <Text style={styles.ctrlLabel}>Share</Text>
+                        <Text style={[styles.ctrlLabel, isSharing && { color: PRIMARY, fontWeight: '900' }]}>
+                            {isSharing ? 'Sharing' : 'Share'}
+                        </Text>
                     </Pressable>
 
                     <Pressable style={styles.ctrlWrap} onPress={() => setShowActions(true)}>
@@ -428,7 +496,7 @@ export default function Meeting() {
             video={false} // Delay till connected
             connectOptions={{
                 autoSubscribe: true,
-                connectTimeout: 30000, // 30s timeout for stability
+                connectTimeout: 30000, 
                 publishDefaults: {
                     videoEncoding: { maxBitrate: 1500000 },
                     dtx: true,
@@ -436,14 +504,12 @@ export default function Meeting() {
             }}
             onDisconnected={(reason) => {
                 console.log('Disconnected from LiveKit:', reason);
-                // Only navigate back if it's intentional or not a retryable error
                 if (reason === 'user_initiated' || reason === 'room_closed') {
                     handleEnd();
                 }
             }}
             onError={(e) => {
                 console.error('LiveKitRoom Error:', e);
-                // Don't set error state immediately unless it's critical
                 if (e.message?.includes('token') || e.message?.includes('url')) {
                     setError(`Connection Error: ${e.message}`);
                 }
@@ -618,4 +684,73 @@ const styles = StyleSheet.create({
     actionIconBox: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
     actionLabel: { flex: 1, fontSize: 15, fontWeight: '700', color: BG_DARK },
     actionChevron: { fontSize: 22, color: MUTED },
+
+    // Screen Share Helpers
+    stopSharingBar: {
+        backgroundColor: PRIMARY,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        borderRadius: 14,
+        marginHorizontal: 14,
+        marginBottom: 10,
+        elevation: 10,
+        shadowColor: PRIMARY,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+    },
+    stopSharingContent: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    stopSharingIcon: { fontSize: 16 },
+    stopSharingText: { color: WHITE, fontSize: 13, fontWeight: '700' },
+    stopSharingBtn: {
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.4)',
+    },
+    stopSharingBtnText: { color: WHITE, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+    ctrlBtnActiveSharing: {
+        backgroundColor: PRIMARY,
+        borderColor: PRIMARY,
+    },
+    pulseDot: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: '#fecaca',
+        borderWidth: 1,
+        borderColor: WHITE,
+    },
+    sharingActiveContainer: {
+        backgroundColor: '#1e293b',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+    },
+    sharingIconCircle: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: 'rgba(236,91,19,0.15)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    sharingMainTxt: { color: WHITE, fontSize: 18, fontWeight: '800' },
+    sharingSubTxt: { color: MUTED, fontSize: 12, fontWeight: '500', textAlign: 'center', paddingHorizontal: 40 },
+    sharingStopBtnInline: {
+        marginTop: 10,
+        backgroundColor: DANGER,
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 12,
+    },
+    sharingStopBtnInlineText: { color: WHITE, fontWeight: '800', fontSize: 13 },
 });

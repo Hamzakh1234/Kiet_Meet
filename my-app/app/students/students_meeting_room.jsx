@@ -288,38 +288,13 @@ export default function StudentsMeetingRoom() {
                     ))
                 )}
 
-                {/* Participants */}
-                <View style={[styles.annoHeader, { marginTop: 24 }]}>
-                    <Text style={styles.annoSectionTitle}>Classmates</Text>
-                    <Text style={styles.annoCount}>{participants.length} Joined</Text>
-                </View>
-
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.participantList}>
-                    {participants.length === 0 ? (
-                        <Text style={styles.noParticipants}>No other students yet</Text>
-                    ) : (
-                        participants.map((p, idx) => (
-                            <View key={p._id || idx} style={styles.participantItem}>
-                                <View style={styles.pAvatar}>
-                                    <Text style={styles.pAvatarText}>
-                                        {p.firstName?.charAt(0)?.toUpperCase() || '👤'}
-                                    </Text>
-                                </View>
-                                <Text style={styles.pName} numberOfLines={1}>
-                                    {p.firstName} {p.lastName}
-                                </Text>
-                            </View>
-                        ))
-                    )}
-                </ScrollView>
 
                 <View style={{ height: 120 }} />
             </ScrollView>
 
-            {/* ── BOTTOM NAV ── */}
             <Animated.View entering={FadeInUp.duration(500).delay(300)} style={styles.bottomNav}>
                 {[
-                    { icon: '👥', label: 'Participants', active: true  },
+                    { icon: '📋', label: 'Attendance', active: true  },
                     { icon: '🎞️', label: 'Recording',   active: false },
                     { icon: '⚙️', label: 'Settings',    active: false },
                 ].map((tab) => (

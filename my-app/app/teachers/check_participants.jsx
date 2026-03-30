@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import axios from 'axios';
-import { BASE_URL } from '../../config';
+import { BASE_URL, PYTHON_SERVICE_URL } from '../../config';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
 const PRIMARY      = '#ec5b13';
@@ -25,6 +25,7 @@ export default function CheckParticipants() {
     const [participants, setParticipants] = useState([]);
     const [loading,      setLoading]      = useState(true);
     const [removingId,   setRemovingId]   = useState(null);
+    const [imageErrors,  setImageErrors]  = useState({});
 
     useEffect(() => {
         if (classId) {
@@ -49,7 +50,7 @@ export default function CheckParticipants() {
     const confirmRemove = (student) => {
         Alert.alert(
             'Confirm Removal',
-            `Are you sure you want to remove ${student.firstName} ${student.lastName} from this class? They will be kicked out of the meeting.`,
+            `Are you sure you want to remove ${student.fullName} from this class? They will be kicked out of the meeting.`,
             [
                 { text: 'No', style: 'cancel' },
                 { 
@@ -115,20 +116,23 @@ export default function CheckParticipants() {
                             style={styles.participantCard}
                         >
                             <View style={styles.avatarContainer}>
-                                {item.photo ? (
-                                    <Image source={{ uri: item.photo }} style={styles.avatar} />
+                                {!imageErrors[item._id] ? (
+                                    <Image 
+                                        source={{ uri: item.photo || `${PYTHON_SERVICE_URL}/faces/student_${item.email?.toLowerCase()}.jpg` }} 
+                                        style={styles.avatar} 
+                                        onError={() => setImageErrors(prev => ({ ...prev, [item._id]: true }))}
+                                    />
                                 ) : (
                                     <View style={styles.avatarPlaceholder}>
                                         <Text style={styles.avatarText}>
-                                            {item.firstName?.[0]}{item.lastName?.[0]}
+                                            {item.fullName?.[0]?.toUpperCase()}
                                         </Text>
                                     </View>
                                 )}
                             </View>
 
                             <View style={styles.infoContainer}>
-                                <Text style={styles.studentName}>{item.firstName} {item.lastName}</Text>
-                                <Text style={styles.studentEmail}>{item.email}</Text>
+                                <Text style={styles.studentName}>{item.fullName}</Text>
                             </View>
 
                             <Pressable 
