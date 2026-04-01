@@ -248,7 +248,14 @@ const styles = StyleSheet.create({
 // npx expo run:android
 
 
-
+//apni repo mein commit karne k liye
 // git add .
 // git commit -m "your message"
 // git push
+
+
+//taha ki repo mein commit karne k liye
+// cd "C:\Users\ma\Desktop\MY PERHAI\react native course\KIETY-Meet"
+// git add .
+// git commit -m "Added new features to mobile app"
+// git push origin main

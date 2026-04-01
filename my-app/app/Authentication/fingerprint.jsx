@@ -35,6 +35,12 @@ export default function FingerprintRegistration() {
     const rotation = useSharedValue(0);
 
     useEffect(() => {
+        if (params.face_verified === 'true') setLoginData({ face_verified: true });
+        if (params.finger_verified === 'true') setLoginData({ finger_verified: true });
+        if (params.voice_verified === 'true') setLoginData({ voice_verified: true });
+    }, [params.face_verified, params.finger_verified, params.voice_verified]);
+
+    useEffect(() => {
         // Continuous slow rotation for the dashed ring
         rotation.value = withRepeat(
             withTiming(360, { duration: 15000 }),
@@ -110,7 +116,7 @@ export default function FingerprintRegistration() {
                                     if (returnTo) {
                                         router.push({
                                             pathname: returnTo,
-                                            params: { sec_factor_verified: 'true' }
+                                            params: { finger_verified: 'true' }
                                         });
                                     } else {
                                         router.back();

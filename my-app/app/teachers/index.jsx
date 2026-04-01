@@ -71,9 +71,9 @@ const TeacherLogin = () => {
     // ── Sync with Store ──
     useEffect(() => {
         if (params.face_verified === 'true') setLoginData({ face_verified: true });
-        if (params.sec_factor_verified === 'true') setLoginData({ finger_verified: true });
+        if (params.finger_verified === 'true') setLoginData({ finger_verified: true });
         if (params.voice_verified === 'true') setLoginData({ voice_verified: true });
-    }, [params.face_verified, params.sec_factor_verified, params.voice_verified]);
+    }, [params.face_verified, params.finger_verified, params.voice_verified]);
 
     useEffect(() => {
         setLoginData({ email, password });

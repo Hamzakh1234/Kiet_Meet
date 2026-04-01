@@ -8,6 +8,11 @@ import os
 import json
 import librosa
 
+# ── FFmpeg for Windows Decoding ──────────────────
+FFMPEG_PATH = r'D:\ffmpeg-2026-03-30-git-e54e117998-full_build\ffmpeg-2026-03-30-git-e54e117998-full_build\bin'
+if os.path.exists(FFMPEG_PATH) and FFMPEG_PATH not in os.environ['PATH']:
+    os.environ['PATH'] += os.pathsep + FFMPEG_PATH
+
 app = Flask(__name__)
 
 FACES_DIR = 'faces'
@@ -134,9 +139,11 @@ def register_voice():
         filename = f"{role}_{user_id}.wav"
         filepath = os.path.join(VOICE_DIR, filename)
         file.save(filepath)
-        
+
+        print(f"✅ Voice Saved: {filename} for {user_id}")
         return jsonify({'success': True, 'message': 'Voice registered successfully'})
     except Exception as e:
+        print(f"❌ Voice Register Error: {str(e)}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/voice/verify', methods=['POST'])
@@ -156,13 +163,15 @@ def verify_voice():
             return jsonify({'verified': False, 'message': 'No registered voice found'}), 404
         
         # Save temp verify sample
-        verify_filepath = os.path.join(VOICE_DIR, f"verify_{role}_{user_id}.wav")
+        verify_filename = f"verify_{role}_{user_id}.wav"
+        verify_filepath = os.path.join(VOICE_DIR, verify_filename)
         file.save(verify_filepath)
         
         # Simple MFCC Comparison (Basic Similarity)
         try:
-            y1, sr1 = librosa.load(reg_filepath)
-            y2, sr2 = librosa.load(verify_filepath)
+            # use sr=None for native sampling rate
+            y1, sr1 = librosa.load(reg_filepath, sr=None)
+            y2, sr2 = librosa.load(verify_filepath, sr=None)
             
             mfcc1 = librosa.feature.mfcc(y=y1, sr=sr1)
             mfcc2 = librosa.feature.mfcc(y=y2, sr=sr2)
@@ -172,11 +181,16 @@ def verify_voice():
             
             dist = np.linalg.norm(avg1 - avg2)
             match = dist < 70.0 # Adjusted threshold
+            print(f"📊 Voice Comparison: User={user_id}, Distance={dist}, Match={match}")
         except Exception as e:
-            return jsonify({'verified': False, 'message': f'Audio processing error: {str(e)}'}), 400
+            print(f"⚠️ Audio Loading/Processing Error: {str(e)}")
+            return jsonify({'verified': False, 'message': f'Audio error: {str(e)}'}), 500
         
         if os.path.exists(verify_filepath):
-            os.remove(verify_filepath)
+            try:
+                os.remove(verify_filepath)
+            except:
+                pass
         
         return jsonify({
             'verified': bool(match),
@@ -184,6 +198,7 @@ def verify_voice():
             'message': 'Voice verified' if match else 'Voice not recognized'
         })
     except Exception as e:
+        print(f"❌ General Voice Verify Error: {str(e)}")
         return jsonify({'verified': False, 'message': str(e)}), 500
 
 @app.route('/finger/register', methods=['POST'])

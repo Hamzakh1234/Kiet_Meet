@@ -30,28 +30,45 @@ export default function VoiceRegistration() {
     const [recordedUri, setRecordedUri] = useState(null);
     const [loading, setLoading] = useState(false);
     const [permissionResponse, requestPermission] = Audio.usePermissions();
+    const audioLevel = useSharedValue(-160); // dB shared value
+    const [statusText, setStatusText] = useState('Ready to capture');
 
     // ── Waveform Animation ──────────────────────────────────
-    const waveAnim = useSharedValue(1);
-    useEffect(() => {
-        if (isRecording) {
-            waveAnim.value = withRepeat(
-                withSequence(
-                    withTiming(1.5, { duration: 500 }),
-                    withTiming(1, { duration: 500 })
-                ),
-                -1, true
-            );
-        } else {
-            waveAnim.value = 1;
-        }
-    }, [isRecording]);
+    // Mapping decibels to height (dB usually -160 to 0)
+    const getBarHeight = (baseHeight, isRec) => {
+        'worklet';
+        if (!isRec) return baseHeight;
+        // Simple normalization: map -60...0 to 1...2x scale
+        const normalized = Math.max(0, (audioLevel.value + 60) / 60);
+        return baseHeight * (1 + normalized);
+    };
 
-    const animatedWaveStyle = (height) => useAnimatedStyle(() => ({
-        height: isRecording ? height * waveAnim.value : height,
+    const animatedWaveStyle = (heightValue) => useAnimatedStyle(() => ({
+        height: withTiming(getBarHeight(heightValue, isRecording), { duration: 100 }),
     }));
 
     // ── Voice Recording Logic ───────────────────────────────
+    const WAV_OPTIONS = {
+        android: {
+            extension: '.wav',
+            outputFormat: Audio.AndroidOutputFormat.DEFAULT,
+            audioEncoder: Audio.AndroidAudioEncoder.DEFAULT,
+            sampleRate: 44100,
+            numberOfChannels: 1,
+            bitRate: 128000,
+        },
+        ios: {
+            extension: '.wav',
+            audioQuality: Audio.IOSAudioQuality.HIGH,
+            sampleRate: 44100,
+            numberOfChannels: 1,
+            bitRate: 128000,
+            linearPCMBitDepth: 16,
+            linearPCMIsBigEndian: false,
+            linearPCMIsFloat: false,
+        },
+    };
+
     async function startRecording() {
         try {
             if (permissionResponse.status !== 'granted') {
@@ -62,24 +79,32 @@ export default function VoiceRegistration() {
                 playsInSilentModeIOS: true,
             });
 
-            const { recording } = await Audio.Recording.createAsync(
-                Audio.RecordingOptionsPresets.HIGH_QUALITY
+            const { recording: newRecording } = await Audio.Recording.createAsync(
+                WAV_OPTIONS,
+                (status) => {
+                    if (status.metering !== undefined) {
+                        audioLevel.value = status.metering;
+                    }
+                },
+                100 // update every 100ms
             );
-            setRecording(recording);
+            setRecording(newRecording);
             setIsRecording(true);
+            setStatusText('Listening...');
         } catch (err) {
+            console.log('Failed to start recording:', err);
             Alert.alert('Failed to start recording', err.message);
         }
     }
 
     async function stopRecording() {
         setIsRecording(false);
+        audioLevel.value = -160;
+        setStatusText('Voice Captured ✓');
         await recording.stopAndUnloadAsync();
         const uri = recording.getURI();
         setRecordedUri(uri);
         setRecording(undefined);
-        console.log('Recording stopped and stored at', uri);
-        // Removed Alert to allow "Close Recording" to feel like a refresh/stop
     }
 
     const handleSubmit = async () => {
@@ -89,6 +114,8 @@ export default function VoiceRegistration() {
         }
         
         setLoading(true);
+        setStatusText(mode === 'verify' ? 'Verifying Identity...' : 'Registering Voice...');
+
         try {
             const formData = new FormData();
             formData.append('voice_sample', {
@@ -109,6 +136,7 @@ export default function VoiceRegistration() {
 
             if (mode === 'verify') {
                 if (response.data.verified) {
+                    setStatusText('Identity Confirmed!');
                     Alert.alert('✅ Verified', 'Voice identity confirmed!', [
                         {
                             text: 'OK',
@@ -116,7 +144,7 @@ export default function VoiceRegistration() {
                                 if (returnTo) {
                                     router.push({
                                         pathname: returnTo,
-                                        params: { sec_factor_verified: 'true' }
+                                        params: { voice_verified: 'true' }
                                     });
                                 } else {
                                     router.back();
@@ -125,11 +153,13 @@ export default function VoiceRegistration() {
                         }
                     ]);
                 } else {
+                    setStatusText('Verification Failed');
                     Alert.alert('❌ Failed', 'Voice not recognized. Try again.');
                     setRecordedUri(null);
                 }
             } else {
                 // Registration success 
+                setStatusText('Enrolled Successfully!');
                 Alert.alert('✅ Enrolled', 'Voice pattern registered!', [
                     {
                         text: 'Continue',
@@ -140,7 +170,6 @@ export default function VoiceRegistration() {
                                     params: { voice_done: 'true' }
                                 });
                             } else {
-                                // Default flow
                                 router.back(); 
                             }
                         }
@@ -149,6 +178,7 @@ export default function VoiceRegistration() {
             }
         } catch (e) {
             console.log(e);
+            setStatusText('Connection Error');
             Alert.alert('Error', 'Server connection failed.');
         } finally {
             setLoading(false);
@@ -172,7 +202,7 @@ export default function VoiceRegistration() {
             </View>
 
             <View style={styles.content}>
-                <Text style={styles.mainTitle}>Record Voice</Text>
+                <Text style={styles.mainTitle}>{mode === 'verify' ? 'Verify Voice' : 'Record Voice'}</Text>
 
                 {/* ── Central Visualization Card ── */}
                 <Animated.View entering={FadeInDown.duration(600)} style={styles.card}>
@@ -180,11 +210,11 @@ export default function VoiceRegistration() {
                     <View style={styles.blurCircle} />
 
                     {/* Mic Icon */}
-                    <View style={[styles.micCircle, { backgroundColor: isRecording ? '#ba1a1a' : PRIMARY }]}>
+                    <View style={[styles.micCircle, { backgroundColor: isRecording ? '#ec5b13' : PRIMARY }]}>
                         <Text style={{ color: '#fff', fontSize: 40 }}>🎙️</Text>
                     </View>
 
-                    {/* Waveform Bars */}
+                    {/* Live Waveform Bars */}
                     <View style={styles.waveformContainer}>
                         {[20, 40, 60, 30, 80, 45, 90, 55, 70, 35, 50, 25].map((h, i) => (
                             <Animated.View 
@@ -194,9 +224,11 @@ export default function VoiceRegistration() {
                         ))}
                     </View>
 
-                    {/* Phrase Section */}
+                    {/* Status Feedback Message */}
                     <View style={styles.phraseBox}>
-                        <Text style={styles.phraseLabel}>PLEASE READ ALOUD</Text>
+                        <Text style={[styles.phraseLabel, isRecording && { color: '#ec5b13', fontWeight: 'bold' }]}>
+                            {statusText}
+                        </Text>
                         <Text style={styles.phraseText}>
                             "Say your name and password for Kiet Meet"
                         </Text>
@@ -205,9 +237,9 @@ export default function VoiceRegistration() {
                     {/* Record Button */}
                     <Pressable 
                         onPress={isRecording ? stopRecording : startRecording}
-                        style={[styles.recordBtn, isRecording && { opacity: 0.8 }]}
+                        style={[styles.recordBtn, isRecording && { backgroundColor: '#ec5b13' }]}
                     >
-                        <View style={[styles.recordDot, { backgroundColor: isRecording ? '#fff' : '#fff' }]} />
+                        <View style={[styles.recordDot, { backgroundColor: '#fff' }]} />
                         <Text style={styles.recordBtnText}>
                             {isRecording ? "Stop Recording" : "Start Recording"}
                         </Text>
@@ -218,7 +250,7 @@ export default function VoiceRegistration() {
                 <Pressable 
                     style={[styles.submitBtn, (!recordedUri || loading) && { opacity: 0.5 }]} 
                     onPress={handleSubmit}
-                    disabled={loading}
+                    disabled={loading || isRecording}
                 >
                     {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Done</Text>}
                 </Pressable>
