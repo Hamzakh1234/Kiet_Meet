@@ -32,15 +32,6 @@ const ROLES = [
         route: '/teachers/',
     },
     {
-        key: 'admin',
-        title: 'Administrator',
-        description: 'Configure institution settings and manage user permissions.',
-        icon: '🛡️',
-        accentColor: '#A855F7',
-        bgColor: '#F5F3FF',
-        route: '/administration/',
-    },
-    {
         key: 'public',
         title: 'Public User',
         description: 'Access public webinars and open academic conferences.',

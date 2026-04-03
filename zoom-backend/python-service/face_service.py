@@ -231,9 +231,9 @@ def verify_finger():
     except Exception as e:
         return jsonify({'verified': False, 'message': str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=True)
-
 @app.route('/faces/<path:filename>')
 def serve_face(filename):
-    return send_from_directory(FACES_DIR, filename)
+    return send_from_directory(FACES_DIR, filename)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5001, debug=True)

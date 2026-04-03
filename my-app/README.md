@@ -100,7 +100,6 @@ my-app/
 │   │   ├── class_recording.jsx
 │   │   └── check_attendance.jsx
 │   │
-│   ├── administration/        # Admin panel
 │   ├── public_user/           # Public-facing screens
 │   ├── home.jsx               # Home/landing screen
 │   ├── index.jsx              # App entry / role selector

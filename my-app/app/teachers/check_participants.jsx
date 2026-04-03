@@ -116,11 +116,15 @@ export default function CheckParticipants() {
                             style={styles.participantCard}
                         >
                             <View style={styles.avatarContainer}>
-                                {!imageErrors[item._id] ? (
+                                {!imageErrors[item._id?.toString() || index.toString()] ? (
                                     <Image 
-                                        source={{ uri: item.photo || `${PYTHON_SERVICE_URL}/faces/student_${item.email?.toLowerCase()}.jpg` }} 
+                                        key={`img_${item._id || index}`}
+                                        source={{ uri: item.photo || `${PYTHON_SERVICE_URL}/faces/student_${item.email?.trim().toLowerCase()}.jpg?t=${Date.now()}` }} 
                                         style={styles.avatar} 
-                                        onError={() => setImageErrors(prev => ({ ...prev, [item._id]: true }))}
+                                        onError={() => {
+                                            console.log(`Failed to load photo for ${item.email}`);
+                                            setImageErrors(prev => ({ ...prev, [item._id?.toString() || index.toString()]: true }));
+                                        }}
                                     />
                                 ) : (
                                     <View style={styles.avatarPlaceholder}>
@@ -133,6 +137,7 @@ export default function CheckParticipants() {
 
                             <View style={styles.infoContainer}>
                                 <Text style={styles.studentName}>{item.fullName}</Text>
+                                {item.email && <Text style={styles.studentEmail}>{item.email}</Text>}
                             </View>
 
                             <Pressable 
